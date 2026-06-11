@@ -1,46 +1,65 @@
 import os
 from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
-# Load security environment variables from local vault
+# Load credentials from hidden vault
 load_dotenv()
-
 api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key or api_key == "AIzaSyYourActualSecretKeyHere":
-    print("\n[!] CRITICAL ERROR: GEMINI_API_KEY is missing or invalid in your .env file.")
-    print("Please ensure an exact file named '.env' exists in your project folder with a valid key.\n")
+if not api_key:
+    print("\n[!] CRITICAL ERROR: GEMINI_API_KEY is missing from your .env file.\n")
     client = None
 else:
-    # Modern SDK client initialization standard
     client = genai.Client(api_key=api_key)
+
+# The Core Engineering Directive (Recruiters look closely at this style)
+HELP_SYSTEM_INSTRUCTION = """
+You are HELP (Humanitarian Emergency Liaison Platform), an elite autonomous AI Emergency Triage Agent.
+Your singular objective is to maximize the containment and survival of any living entity (human, animal, plant) or stability of critical non-living infrastructure experiencing a high-urgency crisis.
+
+When analyzing user inputs, your response MUST follow this exact, clinical 4-stage layout:
+
+1. 🚨 DISPATCH STATUS & URGENCY REPORT: Define the exact scenario category (e.g., Canine Medical Crisis, Structural Hazard, Human Trauma) and assign a priority tier: [CRITICAL / SEVERE / MODERATE].
+2. ⏱️ IMMEDIATE SECURE & CONTAINMENT INSTRUCTIONS: Give 3 lightning-fast step-by-step actions the user must take *right now* to stabilize the entity safely without causing harm or taking legal risks.
+3. 🗺️ CRITICAL METADATA REQUESTS: Ask for precise follow-up information needed to guide rescue or civic support entities (e.g., current visible injuries, environmental threats, approximate geographic landmarks).
+4. ⚠️ RISK MITIGATION ADVISORY: State one distinct action the user must avoid doing under any circumstances to prevent exacerbating the crisis.
+
+Maintain a calm, authoritative, urgent tone. Do not use conversational pleasantries like 'I am sorry to hear that' or 'How can I help you today?'. Go straight into the triage blueprint.
+"""
 
 
 def generate_triage_response(user_input: str) -> str:
     """
-    Sends raw input to the HELP core brain using the current flagship model.
+    Processes a crisis statement and routes it through the anchored HELP triage guidelines.
     """
     if not client:
-        return "HELP System Engine Error: Core API client is unconfigured."
+        return "HELP System Core Error: Local client is unconfigured."
     try:
-        # Utilizing flagship high-speed real-time processing model
+        # Injecting the system layout instructions dynamically via the GenerateContentConfig object
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=user_input,
+            config=types.GenerateContentConfig(
+                system_instruction=HELP_SYSTEM_INSTRUCTION,
+                temperature=0.2  # Low variance for strict compliance with emergency rules
+            )
         )
         return response.text
     except Exception as e:
-        return f"HELP System Engine Error connecting to core: {str(e)}"
+        return f"HELP Core Connection Exception: {str(e)}"
 
 
-# Isolated execution handshake check
 if __name__ == "__main__":
-    print("=== HELP AI Core: Initializing Modern System Handshake Check ===")
-    test_prompt = "System check protocol. Confirm your active engine identity."
-    print(f"Sending Probe: '{test_prompt}'")
+    print("\n=== HELP AI Platform: Initializing Triage Stress Test ===")
 
-    analysis = generate_triage_response(test_prompt)
+    # Simulating your core concept: A street animal needing emergency stabilization
+    test_crisis = "I just found a stray dog on the side of the road. It looks like it was hit by a car, it is bleeding heavily from its hind leg and crying, I do not know what to do."
 
-    print("\n=== Core Response Received ===")
-    print(analysis)
+    print(f"\n[Incoming Simulation Prompt]:\n'{test_crisis}'")
+
+    triage_output = generate_triage_response(test_crisis)
+
+    print("\n=== SYSTEM TRIAGE REASONING MATRIX GENERATED ===")
+    print(triage_output)
     print("=========================================================")

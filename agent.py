@@ -1,16 +1,15 @@
 import os
+import io
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
+from PIL import Image
 
+# Load environment variables
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
-    print("\n[!] CRITICAL ERROR: GEMINI_API_KEY is missing from your .env file.\n")
-    client = None
-else:
-    client = genai.Client(api_key=api_key)
+# Initialize the modern Gemini Client
+client = genai.Client()
 
 HELP_SYSTEM_INSTRUCTION = """
 You are HELP (Humanitarian Emergency Liaison Platform), an elite autonomous AI Emergency Triage Agent.
@@ -28,42 +27,84 @@ Maintain a calm, authoritative, urgent tone. Do not use conversational pleasantr
 """
 
 
-def generate_triage_response(user_input: str) -> str:
+def process_triage_request(text_prompt: str = "", image_bytes: bytes = None, audio_bytes: bytes = None):
     """
-    Processes a crisis statement and routes it through the anchored HELP triage guidelines,
-    utilizing live Google Search Grounding for dispatch validation.
+    Omni-modal triage processor. Accepts text, image bytes, and audio bytes simultaneously.
+    Returns a dictionary with the report and the search queries it used.
     """
-    if not client:
-        return "HELP System Core Error: Local client is unconfigured."
+    contents_parts = []
 
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=user_input,
-            config=types.GenerateContentConfig(
-                system_instruction=HELP_SYSTEM_INSTRUCTION,
-                temperature=0.2,
-                tools=[{"google_search": {}}]
-            )
-        )
-        return response.text
-    except Exception as e:
-        return f"HELP Core Connection Exception: {str(e)}"
+    # 1. Process Image Input
+    if image_bytes:
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
 
+            img_byte_arr = io.BytesIO()
+            img.save(img_byte_arr, format='JPEG', quality=85)
+            safe_img_bytes = img_byte_arr.getvalue()
 
-if __name__ == "__main__":
-    print("\n=== HELP AI Platform: Initializing Agentic Search Test ===")
+            contents_parts.append(types.Part.from_bytes(data=safe_img_bytes, mime_type="image/jpeg"))
+        except Exception as e:
+            return {"success": False, "error": f"Image processing failed: {e}"}
 
-    test_crisis = (
-        "I just found a stray dog on the side of the road in Andheri West, Mumbai. "
-        "It looks like it was hit by a car, it is bleeding heavily from its hind leg "
-        "and crying. I do not know what to do."
+    # 2. Process Live Audio Input
+    if audio_bytes:
+        try:
+            contents_parts.append(types.Part.from_bytes(data=audio_bytes, mime_type="audio/wav"))
+        except Exception as e:
+            return {"success": False, "error": f"Audio processing failed: {e}"}
+
+    # 3. Process Text Input
+    if text_prompt.strip():
+        contents_parts.append(types.Part.from_text(text=text_prompt))
+
+    # Safety Check: Did the user provide ANYTHING?
+    if not contents_parts:
+        return {"success": False, "error": "No telemetry provided. Please input text, image, or audio."}
+
+    # Compile the final structured payload
+    structured_contents = types.Content(role="user", parts=contents_parts)
+
+    # Configure the Search Grounding Tool
+    config = types.GenerateContentConfig(
+        system_instruction=HELP_SYSTEM_INSTRUCTION,
+        tools=[types.Tool(google_search=types.GoogleSearch())],
+        temperature=0.2,
     )
 
-    print(f"\n[Incoming Simulation Prompt]:\n'{test_crisis}'")
+    try:
+        # Ping the Gemini 2.5 Flash model
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=structured_contents,
+            config=config
+        )
 
-    triage_output = generate_triage_response(test_crisis)
+        # --- SAFE RESPONSE PARSING ---
+        search_queries = []
 
-    print("\n=== SYSTEM TRIAGE REASONING MATRIX GENERATED ===")
-    print(triage_output)
-    print("=========================================================")
+        # Safely drill down through the objects using getattr or checking attributes directly
+        if response.candidates:
+            first_candidate = response.candidates[0]
+            if hasattr(first_candidate, 'grounding_metadata') and first_candidate.grounding_metadata:
+                metadata = first_candidate.grounding_metadata
+                if hasattr(metadata, 'web_search_queries') and metadata.web_search_queries:
+                    search_queries = metadata.web_search_queries
+
+        return {
+            "success": True,
+            "report": response.text if response.text else "No report text returned.",
+            "queries": search_queries
+        }
+
+    except Exception as e:
+        return {"success": False, "error": f"API Connection Exception: {e}"}
+
+# Quick local test block (won't run when imported by app.py)
+if __name__ == "__main__":
+    print("Testing agent logic...")
+    res = process_triage_request(text_prompt="Testing the omni-modal network.")
+    print(res)
+

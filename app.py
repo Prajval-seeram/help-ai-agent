@@ -1,43 +1,67 @@
 import streamlit as st
-from agent import generate_triage_response
+from agent import process_triage_request
 
-st.set_page_config(
-    page_title="HELP AI Platform",
-    page_icon="🚨",
-    layout="wide"
-)
+# Page Configuration for a wider, modern look
+st.set_page_config(page_title="HELP AI Network", page_icon="🚨", layout="wide")
 
-st.title("🚨 HELP: Humanitarian Emergency Liaison Platform")
-st.subheader("Elite Autonomous AI Emergency Triage & Dispatch Console")
-st.markdown("---")
+st.title("🚨 HELP: Autonomous Emergency AI Agent")
+st.markdown("**Omni-Modal Telemetry Interface**: Submit text, photos, or live audio to trigger the AI triage protocol.")
 
-col1, col2 = st.columns([1, 1])
+# --- UI LAYOUT: 3 COLUMNS FOR INPUTS ---
+col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.header("📥 Incident Ingest Portal")
-
-    user_input = st.text_area(
-        "Describe the emergency crisis context in detail (Include specific locations for live routing):",
-        height=150,
-        placeholder="Example: I found an injured stray dog on the road in Andheri West, Mumbai. It is bleeding from its hind leg..."
-    )
-
-    st.markdown("### 🎙️ Multimodal Inputs")
-    uploaded_image = st.file_uploader("Upload Crisis Scene Documentation (Images)", type=["jpg", "jpeg", "png"])
-    uploaded_audio = st.file_uploader("Upload Audio Reports / Ambient Sound Captures", type=["wav", "mp3"])
-
-    submit_btn = st.button("🚨 INITIATE EMERGENCY TRIAGE", use_container_width=True)
+    st.subheader("📝 1. Text Context")
+    user_text = st.text_area("Describe the situation & location:", height=150,
+                             placeholder="e.g., Found a stray dog injured on SV Road, Bandra...")
 
 with col2:
-    st.header("📡 Live Triage & Routing Matrix")
+    st.subheader("📸 2. Visual Telemetry")
+    uploaded_image = st.file_uploader("Upload an image of the emergency", type=["jpg", "jpeg", "png"])
+    if uploaded_image:
+        st.image(uploaded_image, caption="Visual Locked", use_container_width=True)
 
-    if submit_btn:
-        if not user_input.strip():
-            st.error("System Warning: Input context cannot be empty during a crisis declaration.")
-        else:
-            with st.spinner("Processing crisis stream... Grounding live dispatch data..."):
-                triage_matrix = generate_triage_response(user_input)
-                st.markdown("### Operational Instructions")
-                st.markdown(triage_matrix)
+with col3:
+    st.subheader("🎙️ 3. Live Audio Dispatch")
+    # THE MAGIC WIDGET: Native Streamlit microphone recorder!
+    recorded_audio = st.audio_input("Record a live situation report")
+    if recorded_audio:
+        st.success("Audio captured successfully.")
+
+# --- ACTION BUTTON ---
+st.divider()
+submit_button = st.button("🔴 INITIATE AI TRIAGE SEQUENCE", use_container_width=True, type="primary")
+
+if submit_button:
+    # Ensure at least one input exists before hitting the API
+    if not user_text and not uploaded_image and not recorded_audio:
+        st.error("⚠️ Please provide at least one form of input (Text, Image, or Audio) before initiating.")
     else:
-        st.info("System Status: Standby. Awaiting incident payload ingest from portal.")
+        with st.spinner("🧠 HELP Core is analyzing multimodal telemetry and pinging local networks..."):
+
+            # Extract bytes from the UI elements if they exist
+            img_bytes = uploaded_image.getvalue() if uploaded_image else None
+            audio_bytes = recorded_audio.getvalue() if recorded_audio else None
+
+            # Call our refactored backend!
+            result = process_triage_request(
+                text_prompt=user_text,
+                image_bytes=img_bytes,
+                audio_bytes=audio_bytes
+            )
+
+            # --- RENDER RESULTS ---
+            if result.get("success"):
+                st.success("✅ Triage Matrix Generated")
+
+                # Show exactly what the AI searched on Google
+                if result.get("queries"):
+                    with st.expander("🌐 View Live Web Grounding Queries"):
+                        for q in result["queries"]:
+                            st.markdown(f"- `{q}`")
+
+                # Display the 5-Stage Output
+                st.markdown("### 📋 Official Action Protocol")
+                st.markdown(result["report"])
+            else:
+                st.error(f"❌ Core Error: {result.get('error')}")

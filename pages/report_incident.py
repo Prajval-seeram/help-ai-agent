@@ -56,6 +56,7 @@ if st.button("Create Incident"):
     else:
 
         incident_data = {
+            "user_id": st.session_state.get("user_id"),
             "incident_type": incident_type,
             "description": description,
             "location_name": location_name,

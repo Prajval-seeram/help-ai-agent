@@ -1,25 +1,11 @@
 import streamlit as st
-from ui import apply_custom_css
 
-# MUST be the first command in Streamlit
 st.set_page_config(
-    page_title="HELP | AI Triage",
-    page_icon="🚨",
-    layout="centered"
+    page_title="HELP",
+    page_icon="🆘",
+    layout="wide"
 )
 
-# Apply global CSS
-apply_custom_css()
+st.title("HELP")
 
-# Native Streamlit Multi-Page Routing
-pages = {
-    "Operations": [
-        st.Page("pages/chat.py", title="Triage Dashboard", icon="🎙️"),
-    ],
-    "System": [
-        st.Page("pages/settings.py", title="Configuration", icon="⚙️"),
-    ]
-}
-
-pg = st.navigation(pages)
-pg.run()
+st.success("Phase 1 setup successful.")

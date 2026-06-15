@@ -1,8 +1,8 @@
 import streamlit as st
 import os
-from ui import render_header
-from location import get_auto_location
-from agent import run_triage_pipeline
+from legacy.ui import render_header
+from legacy.location import get_auto_location
+from legacy.agent import run_triage_pipeline
 
 render_header()
 

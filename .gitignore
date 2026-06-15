@@ -1,7 +1,6 @@
-.venv/
-venv/
-__pycache__/
-.idea/
 .env
-*.tmp
-.streamlit/secrets.toml
+.venv/
+__pycache__/
+uploads/
+logs/
+.idea/

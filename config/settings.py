@@ -23,3 +23,16 @@ SMTP_EMAIL = os.getenv(
 SMTP_PASSWORD = os.getenv(
     "SMTP_PASSWORD"
 )
+
+DEV_MODE = os.getenv(
+    "DEV_MODE",
+    "false"
+).lower() == "true"
+
+TEST_PHONE = os.getenv(
+    "TEST_PHONE"
+)
+
+TEST_EMAIL = os.getenv(
+    "TEST_EMAIL"
+)

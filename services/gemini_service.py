@@ -51,3 +51,73 @@ Return JSON only.
     text = response.text.strip()
 
     return json.loads(text)
+import json
+import re
+
+def generate_email_alert(
+        incident_type,
+        description,
+        analysis,
+        location
+):
+
+    prompt = f"""
+Generate an emergency alert email.
+
+Incident Type:
+{incident_type}
+
+Description:
+{description}
+
+Location:
+{location}
+
+Analysis:
+{analysis}
+
+Return ONLY valid JSON.
+
+Example:
+
+{{
+    "subject": "Emergency Alert",
+    "body": "Email content here"
+}}
+
+Do not use markdown.
+Do not add explanations.
+Return JSON only.
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+
+    text = response.text.strip()
+
+    print("\n===== GEMINI RESPONSE =====")
+    print(text)
+    print("===========================\n")
+
+    # Remove markdown if Gemini adds it
+    text = text.replace("```json", "")
+    text = text.replace("```", "")
+    text = text.strip()
+
+    # Extract JSON object
+    match = re.search(
+        r"\{.*\}",
+        text,
+        re.DOTALL
+    )
+
+    if not match:
+        raise ValueError(
+            f"Gemini returned invalid JSON:\n{text}"
+        )
+
+    return json.loads(
+        match.group()
+    )

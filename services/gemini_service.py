@@ -121,3 +121,94 @@ Return JSON only.
     return json.loads(
         match.group()
     )
+def suggest_responders(
+        incident_type,
+        description,
+        location,
+        analysis
+):
+
+    prompt = f"""
+You are an emergency response coordinator.
+
+Incident Type:
+{incident_type}
+
+Description:
+{description}
+
+Location:
+{location}
+
+Analysis:
+{analysis}
+
+Suggest 3 responders.
+
+For EACH responder generate:
+
+- name
+- type
+- phone
+- email
+- email_subject
+- email_body
+
+The email body must REQUEST assistance.
+
+Do NOT provide medical advice.
+Do NOT provide precautions.
+Do NOT tell professionals how to do their jobs.
+
+The email should simply explain:
+
+- what happened
+- where
+- severity
+- assistance requested
+
+Return ONLY valid JSON.
+
+Example:
+
+{{
+  "responders": [
+    {{
+      "name": "ABC Hospital",
+      "type": "Hospital",
+      "phone": "+91XXXXXXXXXX",
+      "email": "contact@abchospital.com",
+      "email_subject": "Emergency Assistance Required",
+      "email_body": "An incident has been reported..."
+    }}
+  ]
+}}
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+
+    text = response.text.strip()
+
+    text = text.replace("```json", "")
+    text = text.replace("```", "")
+
+    import re
+    import json
+
+    match = re.search(
+        r"\{.*\}",
+        text,
+        re.DOTALL
+    )
+
+    if not match:
+        raise ValueError(
+            f"Invalid Gemini response:\n{text}"
+        )
+
+    return json.loads(
+        match.group()
+    )

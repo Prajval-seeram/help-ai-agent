@@ -1,27 +1,39 @@
 import json
 import re
 from google import genai
+from google.genai import types
 from config.settings import GEMINI_API_KEY
 
 client = genai.Client(
     api_key=GEMINI_API_KEY
 )
 
-
 def analyze_incident(
         incident_type,
-        description
+        description,
+        image_bytes=None,
+        mime_type=None
 ):
     prompt = f"""
 You are an emergency triage AI.
 
-Analyze the incident.
+Analyze the incident based on the description and any provided image evidence.
+If image evidence is available, prioritize visible evidence over vague user descriptions.
+
+Use the image to estimate:
+- severity
+- injuries
+- visible hazards
+- environmental dangers
+
+Increase your confidence score when image evidence is clear.
+Compare the image evidence with the user description. If they conflict, mention the conflict in your recommended action or category.
 
 Incident Type:
 {incident_type}
 
 Description:
-{description}
+{description if description else "No text description provided. Rely entirely on visual evidence."}
 
 Return ONLY valid JSON.
 
@@ -41,20 +53,25 @@ Do not return markdown.
 Do not return explanations.
 Return JSON only.
 """
+    contents = [prompt]
+    if image_bytes and mime_type:
+        image_part = types.Part.from_bytes(
+            data=image_bytes,
+            mime_type=mime_type
+        )
+        contents.append(image_part)
 
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=prompt
+        contents=contents
     )
 
     text = response.text.strip()
-
     text = text.replace("```json", "")
     text = text.replace("```", "")
     text = text.strip()
 
     return json.loads(text)
-
 
 def suggest_responders(
         incident_type,
@@ -122,13 +139,11 @@ Example:
     )
 
     text = response.text.strip()
-
     text = text.replace("```json", "")
     text = text.replace("```", "")
     text = text.strip()
 
     return json.loads(text)
-
 
 def generate_email_alert(
         incident_type,
@@ -176,7 +191,6 @@ Return ONLY valid JSON.
     )
 
     text = response.text.strip()
-
     text = text.replace("```json", "")
     text = text.replace("```", "")
     text = text.strip()

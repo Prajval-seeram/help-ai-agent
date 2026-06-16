@@ -5,26 +5,21 @@ from services.incident_service import (
     create_incident,
     update_incident
 )
-
 from services.audio_service import (
     transcribe_audio
 )
-
 from services.gemini_service import (
     analyze_incident,
     generate_email_alert,
     suggest_responders
 )
-
 from services.email_service import (
     send_email
 )
-
 from config.settings import (
     TEST_EMAIL
 )
 
-# Initialize Session State
 if "audio_transcript" not in st.session_state:
     st.session_state["audio_transcript"] = ""
 
@@ -36,7 +31,6 @@ if "last_audio_hash" not in st.session_state:
 
 st.title("🚨 Report Incident")
 
-# Improved Top-level UI Layout
 col_main, col_side = st.columns([2, 1])
 
 with col_side:
@@ -63,34 +57,31 @@ with col_main:
 
     st.subheader("🎤 Voice Report")
 
-    # Native Streamlit audio input widget
     audio_value = st.audio_input(
         "Record emergency incident report"
     )
 
-    # Automatic Transcription Trigger
     if audio_value:
         current_audio_bytes = audio_value.getvalue()
         audio_hash = hashlib.md5(current_audio_bytes).hexdigest()
 
-        # Only transcribe if the audio hash has actually changed
         if st.session_state["last_audio_hash"] != audio_hash:
-            st.session_state["last_audio_hash"] = audio_hash
-
             with st.spinner("🎙️ Auto-transcribing voice report..."):
                 try:
                     transcript = transcribe_audio(current_audio_bytes, audio_value.type)
                     st.session_state["audio_transcript"] = transcript
+                    st.session_state["last_audio_hash"] = audio_hash
                     st.success("Voice report transcribed automatically.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Transcription failed: {e}")
 
-    # Description Field (Bound to session state to sync with audio automatically)
-    description = st.text_area(
-        "Describe the situation (Editable)",
-        key="audio_transcript",
-        help="You can manually type here, or record audio above to auto-fill this field.",
+    if st.session_state.get("audio_transcript"):
+        st.info(f"**Voice Transcript:** {st.session_state['audio_transcript']}")
+
+    manual_description = st.text_area(
+        "Text Description",
+        help="You can manually type here. If you also recorded audio, both will be combined when you submit.",
         height=150
     )
 
@@ -99,14 +90,25 @@ with col_main:
         type=["jpg", "jpeg", "png"]
     )
 
+    if uploaded_image:
+        st.image(uploaded_image, caption="Uploaded Image Preview")
+
 st.markdown("---")
 
 if st.button("Create Incident", type="primary", use_container_width=True):
-    # Fallback to check the actively synced transcript state
-    final_description = st.session_state.get("audio_transcript", "").strip()
+    audio_text = st.session_state.get("audio_transcript", "").strip()
+    manual_text = manual_description.strip()
 
-    if not final_description and not audio_value:
-        st.error("Please provide a text description or record a voice report.")
+    combined_parts = []
+    if manual_text:
+        combined_parts.append(f"Manual Input:\n{manual_text}")
+    if audio_text:
+        combined_parts.append(f"Voice Transcript:\n{audio_text}")
+
+    final_description = "\n\n".join(combined_parts)
+
+    if not final_description and not uploaded_image:
+        st.error("Please provide a text description, record a voice report, or upload an image.")
     elif location_name == "No location selected":
         st.error("Please select a location first.")
     else:
@@ -129,13 +131,21 @@ if st.button("Create Incident", type="primary", use_container_width=True):
 
             incident_id = result.data[0]["id"]
 
-            # Reset email flag strictly upon NEW incident generation
             st.session_state["email_sent"] = False
 
             with st.spinner("🤖 Analyzing incident and structuring response..."):
+                image_bytes = None
+                mime_type = None
+
+                if uploaded_image:
+                    image_bytes = uploaded_image.getvalue()
+                    mime_type = uploaded_image.type
+
                 analysis = analyze_incident(
                     incident_type,
-                    final_description
+                    final_description,
+                    image_bytes,
+                    mime_type
                 )
 
                 responders = suggest_responders(
@@ -169,12 +179,10 @@ if st.button("Create Incident", type="primary", use_container_width=True):
 
             st.success("Incident saved and analyzed successfully ✅")
 
+            st.session_state["last_audio_hash"] = None
+
         except Exception as e:
             st.error(f"Failed: {e}")
-
-# ==========================
-# AI Assessment
-# ==========================
 
 if "analysis" in st.session_state:
     analysis = st.session_state["analysis"]
@@ -193,10 +201,6 @@ if "analysis" in st.session_state:
     for precaution in analysis["precautions"]:
         st.write(f"• {precaution}")
 
-# ==========================
-# Suggested Responders
-# ==========================
-
 if "responders" in st.session_state:
     st.divider()
     st.subheader("🚑 Suggested Responders")
@@ -206,10 +210,6 @@ if "responders" in st.session_state:
             st.write(f"**Type:** {responder['type']}")
             st.write(f"**Phone:** {responder['phone']}")
             st.write(f"**Email:** {responder['email']}")
-
-# ==========================
-# Email Draft
-# ==========================
 
 if "email_subject" in st.session_state and "email_body" in st.session_state:
     st.divider()

@@ -1,5 +1,5 @@
 import json
-
+import re
 from google import genai
 from config.settings import GEMINI_API_KEY
 
@@ -12,7 +12,6 @@ def analyze_incident(
         incident_type,
         description
 ):
-
     prompt = f"""
 You are an emergency triage AI.
 
@@ -50,84 +49,19 @@ Return JSON only.
 
     text = response.text.strip()
 
-    return json.loads(text)
-import json
-import re
-
-def generate_email_alert(
-        incident_type,
-        description,
-        analysis,
-        location
-):
-
-    prompt = f"""
-Generate an emergency alert email.
-
-Incident Type:
-{incident_type}
-
-Description:
-{description}
-
-Location:
-{location}
-
-Analysis:
-{analysis}
-
-Return ONLY valid JSON.
-
-Example:
-
-{{
-    "subject": "Emergency Alert",
-    "body": "Email content here"
-}}
-
-Do not use markdown.
-Do not add explanations.
-Return JSON only.
-"""
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
-
-    text = response.text.strip()
-
-    print("\n===== GEMINI RESPONSE =====")
-    print(text)
-    print("===========================\n")
-
-    # Remove markdown if Gemini adds it
     text = text.replace("```json", "")
     text = text.replace("```", "")
     text = text.strip()
 
-    # Extract JSON object
-    match = re.search(
-        r"\{.*\}",
-        text,
-        re.DOTALL
-    )
+    return json.loads(text)
 
-    if not match:
-        raise ValueError(
-            f"Gemini returned invalid JSON:\n{text}"
-        )
 
-    return json.loads(
-        match.group()
-    )
 def suggest_responders(
         incident_type,
         description,
         location,
         analysis
 ):
-
     prompt = f"""
 You are an emergency response coordinator.
 
@@ -143,6 +77,20 @@ Location:
 Analysis:
 {analysis}
 
+For animal incidents:
+Prefer veterinary clinics,
+animal rescue organizations,
+government veterinary hospitals.
+
+For medical emergencies:
+Prefer hospitals,
+ambulance services,
+emergency medical responders.
+
+For fires:
+Prefer fire departments,
+disaster response teams.
+
 Suggest 3 responders.
 
 For EACH responder generate:
@@ -151,21 +99,6 @@ For EACH responder generate:
 - type
 - phone
 - email
-- email_subject
-- email_body
-
-The email body must REQUEST assistance.
-
-Do NOT provide medical advice.
-Do NOT provide precautions.
-Do NOT tell professionals how to do their jobs.
-
-The email should simply explain:
-
-- what happened
-- where
-- severity
-- assistance requested
 
 Return ONLY valid JSON.
 
@@ -177,9 +110,7 @@ Example:
       "name": "ABC Hospital",
       "type": "Hospital",
       "phone": "+91XXXXXXXXXX",
-      "email": "contact@abchospital.com",
-      "email_subject": "Emergency Assistance Required",
-      "email_body": "An incident has been reported..."
+      "email": "contact@abchospital.com"
     }}
   ]
 }}
@@ -194,9 +125,61 @@ Example:
 
     text = text.replace("```json", "")
     text = text.replace("```", "")
+    text = text.strip()
 
-    import re
-    import json
+    return json.loads(text)
+
+
+def generate_email_alert(
+        incident_type,
+        description,
+        analysis,
+        location
+):
+    prompt = f"""
+Generate an emergency alert email.
+
+Incident Type:
+{incident_type}
+
+Description:
+{description}
+
+Location:
+{location}
+
+Severity:
+{analysis["severity"]}
+
+Category:
+{analysis["category"]}
+
+Recommended Action:
+{analysis["recommended_action"]}
+
+The email should request assistance.
+
+Do NOT include precautions.
+Do NOT provide medical advice.
+
+Return ONLY valid JSON.
+
+{{
+    "subject": "Emergency Alert",
+    "body": "Email content here"
+}}
+"""
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt
+    )
+
+    text = response.text.strip()
+
+    text = text.replace("```json", "")
+    text = text.replace("```", "")
+    text = text.strip()
 
     match = re.search(
         r"\{.*\}",

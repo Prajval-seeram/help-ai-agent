@@ -1,12 +1,19 @@
 import json
 import re
+import streamlit as st
 from google import genai
 from google.genai import types
 from config.settings import GEMINI_API_KEY
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
+def get_gemini_client():
+    api_key = (
+            st.session_state.get("USER_GEMINI_KEY")
+            or GEMINI_API_KEY
+    )
+
+    return genai.Client(
+        api_key=api_key
+    )
 
 def analyze_incident(
         incident_type,
@@ -60,7 +67,7 @@ Return JSON only.
             mime_type=mime_type
         )
         contents.append(image_part)
-
+    client = get_gemini_client()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=contents
@@ -92,7 +99,7 @@ Location:
 {location}
 
 Analysis:
-{analysis}
+{json.dumps(analysis)}
 
 For animal incidents:
 Prefer veterinary clinics,
@@ -132,7 +139,7 @@ Example:
   ]
 }}
 """
-
+    client = get_gemini_client()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt
@@ -149,7 +156,9 @@ def generate_email_alert(
         incident_type,
         description,
         analysis,
-        location
+        location,
+        reporter_name,
+        reporter_phone
 ):
     prompt = f"""
 Generate an emergency alert email.
@@ -163,16 +172,22 @@ Description:
 Location:
 {location}
 
+Reporter Name:
+{reporter_name}
+
+Reporter Phone:
+{reporter_phone}
+
 Severity:
-{analysis["severity"]}
+{analysis.get("severity", "Unknown")}
 
 Category:
-{analysis["category"]}
+{analysis.get("category", "Unknown")}
 
 Recommended Action:
-{analysis["recommended_action"]}
+{analysis.get("recommended_action", "No specific action recommended.")}
 
-The email should request assistance.
+The email must request assistance and explicitly include the reporter's name, reporter's phone, incident type, location, severity, category, and recommended action.
 
 Do NOT include precautions.
 Do NOT provide medical advice.
@@ -184,7 +199,7 @@ Return ONLY valid JSON.
     "body": "Email content here"
 }}
 """
-
+    client = get_gemini_client()
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt

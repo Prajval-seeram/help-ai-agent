@@ -43,6 +43,31 @@ def create_user_profile(user):
             {
                 "id": user.id,
                 "email": user.email,
-                "accepted_terms": True
+                "accepted_terms": False
             }
         ).execute()
+def get_user_profile(user_id):
+
+    return (
+        supabase
+        .table("users")
+        .select("*")
+        .eq("id", user_id)
+        .single()
+        .execute()
+    )
+
+
+def accept_terms(user_id):
+
+    return (
+        supabase
+        .table("users")
+        .update(
+            {
+                "accepted_terms": True
+            }
+        )
+        .eq("id", user_id)
+        .execute()
+    )

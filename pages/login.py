@@ -34,6 +34,7 @@ with tab1:
             st.session_state["user_id"] = result.user.id
 
             st.success("Login successful ✅")
+            st.switch_page("Home.py")
 
         else:
             st.error("Login failed ❌")

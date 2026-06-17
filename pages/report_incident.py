@@ -1,6 +1,8 @@
-# FILE: pages/report_incident.py
+# FILE: report_incident.py
 import hashlib
+import folium
 import streamlit as st
+from streamlit_folium import st_folium
 
 from services.incident_service import (
     create_incident,
@@ -22,7 +24,6 @@ from services.twilio_service import (
     make_call
 )
 from services.location_service import (
-    get_user_location,
     geocode_location,
     reverse_geocode
 )
@@ -42,7 +43,11 @@ def initialize_state():
         "longitude": None,
         "search_query": "",
         "manual_text_input": "",
-        "incident_type": "Accident"
+        "incident_type": "Accident",
+        "reporter_name": "",
+        "reporter_phone": "",
+        "uploader_key": 0,
+        "m_center": [20.5937, 78.9629]  # Default view centered broadly on India
     }
     for key, default in state_defaults.items():
         if key not in st.session_state:
@@ -63,8 +68,10 @@ def clear_form_data():
 
     for key in keys_to_remove:
         st.session_state.pop(key, None)
+
     st.session_state["incident_type"] = "Accident"
     st.session_state["email_sent"] = False
+    st.session_state["uploader_key"] += 1
 
 
 initialize_state()
@@ -76,40 +83,9 @@ col_main, col_side = st.columns([2, 1])
 with col_side:
     st.subheader("📍 Incident Location")
 
-    has_location = st.session_state["latitude"] is not None and st.session_state["longitude"] is not None
-
-    if has_location:
-        st.success("✅ Location already selected")
-        st.write(f"**Current:** {st.session_state['location_name']}")
-        loc_btn_label = "🔄 Refresh Current Location"
-    else:
-        loc_btn_label = "📡 Use Current Location"
-
-    if st.button(loc_btn_label, use_container_width=True):
-        with st.spinner("Detecting current location..."):
-            user_loc = get_user_location()
-            if user_loc and user_loc.get("latitude"):
-                lat = user_loc["latitude"]
-                lon = user_loc["longitude"]
-                st.session_state["latitude"] = lat
-                st.session_state["longitude"] = lon
-
-                rev_loc_name = reverse_geocode(lat, lon)
-                if rev_loc_name:
-                    st.session_state["location_name"] = rev_loc_name
-                else:
-                    st.session_state["location_name"] = f"Current Location ({lat:.6f}, {lon:.6f})"
-
-                st.success("Location detected successfully!")
-                st.rerun()
-            else:
-                st.error("Failed to detect location. Please try again or search manually.")
-
-    st.markdown("<div style='text-align: center; margin: 10px 0;'><b>OR</b></div>", unsafe_allow_html=True)
-
     st.text_input("Search Location", key="search_query")
     if st.button("🔍 Search", use_container_width=True):
-        query = st.session_state["search_query"]
+        query = st.session_state.get("search_query", "")
         if query:
             with st.spinner("Searching for location..."):
                 geocoded_loc = geocode_location(query)
@@ -117,26 +93,59 @@ with col_side:
                     st.session_state["latitude"] = geocoded_loc["latitude"]
                     st.session_state["longitude"] = geocoded_loc["longitude"]
                     st.session_state["location_name"] = geocoded_loc["address"]
-                    st.success("Location found!")
+                    st.session_state["m_center"] = [geocoded_loc["latitude"], geocoded_loc["longitude"]]
+                    st.session_state["m_marker"] = [geocoded_loc["latitude"], geocoded_loc["longitude"]]
                     st.rerun()
                 else:
                     st.error("Location not found. Please try a different search term.")
         else:
             st.warning("Please enter a location to search.")
 
+    mc = st.session_state.get("m_center")
+    m = folium.Map(location=mc, zoom_start=12)
+
+    if "m_marker" in st.session_state:
+        folium.Marker(st.session_state["m_marker"]).add_to(m)
+
+    map_data = st_folium(m, height=350, use_container_width=True, key="incident_map")
+
+    if map_data and map_data.get("last_clicked"):
+        click_lat = map_data["last_clicked"]["lat"]
+        click_lon = map_data["last_clicked"]["lng"]
+
+        with st.spinner("Identifying location..."):
+            addr = reverse_geocode(click_lat, click_lon)
+            loc_name = addr if addr else f"Lat: {click_lat:.6f}, Lon: {click_lon:.6f}"
+
+            st.session_state["latitude"] = click_lat
+            st.session_state["longitude"] = click_lon
+            st.session_state["location_name"] = loc_name
+            st.session_state["m_center"] = [click_lat, click_lon]
+            st.session_state["m_marker"] = [click_lat, click_lon]
+            st.rerun()
+
     st.divider()
+
+    has_location = st.session_state.get("latitude") is not None and st.session_state.get("longitude") is not None
 
     if not has_location:
         st.warning("No location selected. Please establish a location before submitting.")
     else:
         with st.container():
-            st.success(
-                f"**📍 {st.session_state['location_name']}**\n\n"
-                f"**Latitude:** {st.session_state['latitude']:.6f}\n\n"
-                f"**Longitude:** {st.session_state['longitude']:.6f}"
+            st.success("✅ Location Selected Successfully")
+            st.write(
+                f"**Selected Location:** {st.session_state.get('location_name', 'Unknown')}\n\n"
+                f"**Latitude:** {st.session_state.get('latitude', 0.0):.6f}\n\n"
+                f"**Longitude:** {st.session_state.get('longitude', 0.0):.6f}"
             )
 
+
 with col_main:
+    st.subheader("👤 Reporter Information")
+    st.text_input("Reporter Name (Optional)", key="reporter_name")
+    st.text_input("Reporter Phone Number (Optional)", key="reporter_phone")
+
+    st.subheader("📋 Incident Details")
     incident_types = [
         "Accident",
         "Medical Emergency",
@@ -163,7 +172,7 @@ with col_main:
         current_audio_bytes = audio_value.getvalue()
         audio_hash = hashlib.md5(current_audio_bytes).hexdigest()
 
-        if st.session_state["last_audio_hash"] != audio_hash:
+        if st.session_state.get("last_audio_hash") != audio_hash:
             with st.spinner("🎙️ Auto-transcribing voice report..."):
                 try:
                     transcript = transcribe_audio(current_audio_bytes, audio_value.type)
@@ -191,7 +200,8 @@ with col_main:
 
     uploaded_image = st.file_uploader(
         "Upload Image (Optional)",
-        type=["jpg", "jpeg", "png"]
+        type=["jpg", "jpeg", "png"],
+        key=f"image_uploader_{st.session_state.get('uploader_key', 0)}"
     )
 
     if uploaded_image:
@@ -205,6 +215,9 @@ if st.button("Create Incident", type="primary", use_container_width=True):
     audio_text = st.session_state.get("audio_transcript", "").strip()
     manual_text = st.session_state.get("manual_text_input", "").strip()
 
+    r_name = st.session_state.get("reporter_name", "").strip()
+    r_phone = st.session_state.get("reporter_phone", "").strip()
+
     combined_parts = []
     if manual_text:
         combined_parts.append(f"Manual Input:\n{manual_text}")
@@ -215,11 +228,13 @@ if st.button("Create Incident", type="primary", use_container_width=True):
 
     if not final_description and not uploaded_image:
         st.error("Please provide a text description, record a voice report, or upload an image.")
-    elif st.session_state["latitude"] is None or st.session_state["longitude"] is None:
+    elif st.session_state.get("latitude") is None or st.session_state.get("longitude") is None:
         st.error("Please select a location first.")
     else:
         incident_data = {
             "user_id": st.session_state.get("user_id"),
+            "reporter_name": r_name if r_name else None,
+            "reporter_phone": r_phone if r_phone else None,
             "incident_type": st.session_state.get("incident_type", "Accident"),
             "description": final_description,
             "location_name": st.session_state.get("location_name", "Unknown"),
@@ -231,11 +246,15 @@ if st.button("Create Incident", type="primary", use_container_width=True):
         try:
             result = create_incident(incident_data)
 
-            if not result.data:
+            if not result or not getattr(result, "data", None) or len(result.data) == 0:
                 st.error("Database failed to create the incident. Please try again.")
                 st.stop()
 
-            incident_id = result.data[0]["id"]
+            incident_id = result.data[0].get("id")
+            if not incident_id:
+                st.error("Database returned an invalid incident ID.")
+                st.stop()
+
             st.session_state["email_sent"] = False
 
             with st.spinner("🤖 Analyzing incident and structuring response..."):
@@ -247,24 +266,29 @@ if st.button("Create Incident", type="primary", use_container_width=True):
                     mime_type = uploaded_image.type
 
                 analysis = analyze_incident(
-                    st.session_state["incident_type"],
+                    st.session_state.get("incident_type", "Unknown"),
                     final_description,
                     image_bytes,
                     mime_type
                 )
 
                 responders = suggest_responders(
-                    st.session_state["incident_type"],
+                    st.session_state.get("incident_type", "Unknown"),
                     final_description,
-                    st.session_state["location_name"],
+                    st.session_state.get("location_name", "Unknown"),
                     analysis
                 )
 
+                r_name_display = r_name if r_name else "Not Provided"
+                r_phone_display = r_phone if r_phone else "Not Provided"
+
                 draft = generate_email_alert(
-                    st.session_state["incident_type"],
+                    st.session_state.get("incident_type", "Unknown"),
                     final_description,
                     analysis,
-                    st.session_state["location_name"]
+                    st.session_state.get("location_name", "Unknown"),
+                    r_name_display,
+                    r_phone_display
                 )
 
             update_incident(
@@ -289,9 +313,6 @@ if st.button("Create Incident", type="primary", use_container_width=True):
         except Exception as e:
             st.error(f"Failed: {e}")
 
-# ==========================
-# New Incident
-# ==========================
 
 if "analysis" in st.session_state or "responders" in st.session_state:
     st.button(
@@ -300,8 +321,9 @@ if "analysis" in st.session_state or "responders" in st.session_state:
         on_click=clear_form_data
     )
 
+
 if "analysis" in st.session_state:
-    analysis = st.session_state["analysis"]
+    analysis = st.session_state.get("analysis", {})
 
     if isinstance(analysis, dict):
         st.subheader("AI Assessment")
@@ -315,22 +337,26 @@ if "analysis" in st.session_state:
         st.info(analysis.get("recommended_action", "No recommendation provided."))
 
         precautions = analysis.get("precautions", [])
-        if precautions:
+        if precautions and isinstance(precautions, list):
             st.write("**Precautions:**")
             for precaution in precautions:
                 st.write(f"• {precaution}")
+
 
 if "responders" in st.session_state:
     st.divider()
     st.subheader("🚑 Suggested Responders")
 
-    responders_data = st.session_state["responders"]
+    responders_data = st.session_state.get("responders", {})
     if isinstance(responders_data, dict) and "responders" in responders_data:
-        responders_list = responders_data["responders"]
+        responders_list = responders_data.get("responders", [])
     else:
         responders_list = []
 
     for idx, responder in enumerate(responders_list):
+        if not isinstance(responder, dict):
+            continue
+
         responder_name = responder.get('name', 'Unknown Responder')
         responder_type = responder.get('type', 'Unknown Type')
         responder_phone = responder.get('phone', 'N/A')
@@ -364,19 +390,17 @@ if "responders" in st.session_state:
                             st.error("TEST_PHONE is not configured.")
                         else:
                             with st.spinner(f"Sending SMS to {TEST_PHONE}..."):
-                                incident_type = st.session_state.get("incident_type", "Unknown")
-                                analysis_data = st.session_state.get("analysis", {})
-                                severity = analysis_data.get("severity", "Unknown") if isinstance(analysis_data,
-                                                                                                  dict) else "Unknown"
-                                loc = st.session_state.get("location_name", "Unknown Location")
+                                i_type = st.session_state.get("incident_type", "Unknown")
+                                a_data = st.session_state.get("analysis", {})
+                                a_sev = a_data.get("severity", "Unknown") if isinstance(a_data, dict) else "Unknown"
+                                a_act = a_data.get("recommended_action", "Unknown") if isinstance(a_data, dict) else "Unknown"
+                                a_loc = st.session_state.get("location_name", "Unknown")
 
-                                desc_full = st.session_state.get("manual_text_input", "") or st.session_state.get(
-                                    "audio_transcript", "")
-                                desc_snippet = desc_full[:100] + "..." if len(desc_full) > 100 else desc_full
-                                if not desc_snippet.strip():
-                                    desc_snippet = "No text description provided."
+                                rep_p = st.session_state.get("reporter_phone", "").strip()
+                                rep_p_display = rep_p if rep_p else "Not Provided"
 
-                                sms_message = f"EMERGENCY: {incident_type}\nSeverity: {severity}\nLocation: {loc}\nDetails: {desc_snippet}"
+                                short_act = a_act[:60] + "..." if len(a_act) > 60 else a_act
+                                sms_message = f"EMERGENCY: {i_type}\nSev: {a_sev}\nLoc: {a_loc}\nRep: {rep_p_display}\nAct: {short_act}"
                                 send_sms(TEST_PHONE, sms_message)
                             st.success(f"SMS successfully routed to testing number ({TEST_PHONE}).")
                     except Exception as e:
@@ -389,17 +413,19 @@ if "responders" in st.session_state:
                             st.error("TEST_PHONE is not configured.")
                         else:
                             with st.spinner(f"Calling {TEST_PHONE}..."):
-                                incident_type = st.session_state.get("incident_type", "Unknown")
-                                analysis_data = st.session_state.get("analysis", {})
-                                severity = analysis_data.get("severity", "Unknown") if isinstance(analysis_data,
-                                                                                                  dict) else "Unknown"
-                                loc = st.session_state.get("location_name", "Unknown Location")
+                                a_data = st.session_state.get("analysis", {})
+                                a_sev = a_data.get("severity", "Unknown") if isinstance(a_data, dict) else "Unknown"
+                                a_loc = st.session_state.get("location_name", "Unknown Location")
 
-                                call_message = f"Attention. An emergency has been reported. Incident type: {incident_type}. Severity: {severity}. Location: {loc}. Please respond immediately."
+                                rep_p = st.session_state.get("reporter_phone", "").strip()
+                                phone_text = f" Reporter phone {rep_p}." if rep_p else ""
+
+                                call_message = f"Emergency reported. Severity {a_sev}. Location: {a_loc}.{phone_text} Immediate assistance required."
                                 make_call(TEST_PHONE, call_message)
                             st.success(f"Call successfully initiated to testing number ({TEST_PHONE}).")
                     except Exception as e:
                         st.error(f"Call failed: {e}")
+
 
 if "email_subject" in st.session_state and "email_body" in st.session_state:
     st.divider()

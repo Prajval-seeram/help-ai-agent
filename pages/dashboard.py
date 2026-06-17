@@ -2,14 +2,24 @@ import streamlit as st
 import pandas as pd
 
 from services.incident_service import (
-    get_all_incidents
+    get_user_incidents
 )
 
 st.title("📊 HELP Dashboard")
 
 try:
 
-    result = get_all_incidents()
+    user_id = st.session_state.get("user_id")
+
+    if not user_id:
+        st.warning(
+            "Please login first."
+        )
+        st.stop()
+
+    result = get_user_incidents(
+        user_id
+    )
 
     incidents = result.data
 
